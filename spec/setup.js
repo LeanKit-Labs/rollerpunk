@@ -9,6 +9,11 @@ function requireNew( modulePath ) {
 	return require( realPath );
 }
 
+function patchFsmTransition( fsm ) {
+	fsm._transition = fsm.transition.bind( fsm );
+	fsm.transition = sinon.stub();
+}
+
 global.__loaded__ = global.__loaded__ || false;
 
 if ( !global.__loaded__ ) {
@@ -23,6 +28,7 @@ if ( !global.__loaded__ ) {
 
 	global.when = require( "when" );
 	global.requireNew = requireNew;
+	global.patchFsmTransition = patchFsmTransition;
 
 	global.errors = require( "../src/errors.js" );
 

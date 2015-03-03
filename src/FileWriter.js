@@ -1,3 +1,4 @@
+var _ = require( "lodash" );
 var debug = require( "debug" )( "wp:filewriter" );
 var when = require( "when" );
 var path = require( "path" );
@@ -44,8 +45,7 @@ var FileWriter = machina.Fsm.extend( {
 			} );
 
 			self.logStream.on( "error", function( err ) {
-				self.logStream.removeAllListeners( "error" );
-				self.logStream.removeAllListeners( "open" );
+				self.logStream.removeAllListeners();
 				reject( err );
 			} );
 
@@ -73,7 +73,6 @@ var FileWriter = machina.Fsm.extend( {
 				return resolve();
 			} );
 
-			self.logStream.removeAllListeners( "error" );
 			self.logStream.close();
 		} );
 
@@ -137,10 +136,7 @@ var FileWriter = machina.Fsm.extend( {
 		var targetPath = path.resolve( this.logFolder, targetName );
 		debug( "Archiving current file to %s", targetPath );
 		return archiver.archive( this.logFilePath, targetPath )
-			.then( function() {
-				debug( "Removing current file." );
-				return this._removeCurrentLog();
-			}.bind( this ) );
+			.then( this._removeCurrentLog.bind( this ) );
 	},
 
 	_removeCurrentLog: function() {
@@ -168,7 +164,7 @@ var FileWriter = machina.Fsm.extend( {
 					self.reboot();
 				};
 
-				this._verifyDirectory().then( onSuccess, onError );
+				return this._verifyDirectory().then( onSuccess, onError );
 
 			},
 			write: function() {
@@ -193,7 +189,7 @@ var FileWriter = machina.Fsm.extend( {
 					self.reboot();
 				};
 
-				this._openLog().then( openSuccess, openError );
+				return this._openLog().then( openSuccess, openError );
 			},
 			write: function() {
 				this.deferUntilTransition( "ready" );
@@ -202,19 +198,44 @@ var FileWriter = machina.Fsm.extend( {
 
 		archiving: {
 			_onEnter: function() {
+
+				if ( this.priorState !== "pre-archiving" ) {
+					return this.transition( "pre-archiving" );
+				}
+
 				this.emit( "archive" );
 				var self = this;
-				self._closeHandle()
+				return self._closeHandle()
 					.then( self._archive.bind( self ) )
 					.then( function() { // result is the archived file name
 						self.transition( "acquiring" );
 					}, function( err ) {
-							console.log( err );
+							console.error( err );
 							self.reboot();
 						} );
 			},
 			write: function() {
-				console.log( "ARCHIVING WRITE" );
+				this.deferUntilTransition( "ready" );
+			}
+		},
+
+		"pre-archiving": {
+			_onEnter: function() {
+				debug( "Ensuring buffers are flushed" );
+				if ( !this.logStream ) {
+					debug( "Nothing in buffer" );
+					return this.transition( "archiving" );
+				}
+
+				debug( "Ending stream" );
+
+				this.logStream.end( "", function() {
+					debug( "Stream has finished writing" );
+					this.transition( "archiving" );
+				}.bind( this ) );
+			},
+
+			write: function() {
 				this.deferUntilTransition( "ready" );
 			}
 		},
@@ -271,7 +292,7 @@ var FileWriter = machina.Fsm.extend( {
 		this.stop();
 
 		if ( this.reboots <= this.maxConsecutiveReboots ) {
-			setTimeout( function() {
+			_.delay( function() {
 				this.transition( "booting" );
 			}.bind( this ), this.rebootInterval );
 		} else {

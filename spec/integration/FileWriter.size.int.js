@@ -21,7 +21,7 @@ describe( "FileWriter Size Strategy Integration Tests", function() {
 		var archiveCount = 0;
 
 		before( function( done ) {
-			this.timeout( 6000 );
+			this.timeout( 5000 );
 			fw = fileLogger( {
 				strategy: "size",
 				maxSize: maxSize,
@@ -29,22 +29,13 @@ describe( "FileWriter Size Strategy Integration Tests", function() {
 				fileName: logName
 			} );
 
-			fw.on( "*", function( name, data ) {
-				console.log( JSON.stringify( arguments, null, 2 ) );
-
-			} );
-
-			// fw.on( "archive", function() {
-			// 	archiveCount++;
-			// } );
-
 			_.times( 25, function( n ) { // Write 125 bytes (25 lines)
 				fw.write( line + n );
 			} );
 
 			setTimeout( function() {
 				done();
-			}, 5000 );
+			}, 4000 );
 
 		} );
 

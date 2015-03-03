@@ -59,7 +59,7 @@ describe( "Log Size Management Strategy", function() {
 
 		it( "should have a timestamp appended", function() {
 			// size-test_2015-03-02_11:03:29.log
-			var regex = /^size\-test_[\d]{4}\-[\d]{2}-[\d]{2}_[\d]{2}:[\d]{2}:[\d]{3}\.log$/;
+			var regex = /^size\-test_[\d]{4}\-[\d]{2}-[\d]{2}_[\d]{2}-[\d]{2}-[\d]{3}\.log$/;
 			result.should.match( regex );
 		} );
 
