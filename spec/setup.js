@@ -30,8 +30,6 @@ if ( !global.__loaded__ ) {
 	global.requireNew = requireNew;
 	global.patchFsmTransition = patchFsmTransition;
 
-	global.errors = require( "../src/errors.js" );
-
 	require( "sinon-as-promised" )( when );
 
 	global.__loaded__ = true;

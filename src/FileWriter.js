@@ -3,7 +3,7 @@ var debug = require( "debug" )( "wp:filewriter" );
 var when = require( "when" );
 var path = require( "path" );
 var machina = require( "machina" );
-var errors = require( "./errors.js" );
+var InvalidLogException = require( "./errors.js" ).InvalidLogException;
 var fs = require( "./filesystem.js" );
 var archiver = require( "./archiver.js" );
 var os = require( "os" );
@@ -119,7 +119,7 @@ var FileWriter = machina.Fsm.extend( {
 					return self._openHandle( stats );
 				} else {
 					debug( "Log file is not in a valid state." );
-					return when.reject( new errors.InvalidLogException() );
+					return when.reject( new InvalidLogException() );
 				}
 
 			} else {
@@ -181,8 +181,9 @@ var FileWriter = machina.Fsm.extend( {
 				};
 
 				var openError = function( err ) {
-					if ( err instanceof errors.InvalidLogException ) {
-						return self.transition( "archiving" );
+					if ( err instanceof InvalidLogException ) {
+						self.transition( "archiving" );
+						return;
 					}
 					console.error( "Problem acquiring log file." );
 					console.error( err.toString() );
@@ -205,14 +206,19 @@ var FileWriter = machina.Fsm.extend( {
 
 				this.emit( "archive" );
 				var self = this;
+
+				var onSuccess = function() {
+					self.transition( "acquiring" );
+				};
+
+				var onFail = function( err ) {
+					console.error( err.toString() );
+					self.reboot();
+				};
+
 				return self._closeHandle()
 					.then( self._archive.bind( self ) )
-					.then( function() { // result is the archived file name
-						self.transition( "acquiring" );
-					}, function( err ) {
-							console.error( err );
-							self.reboot();
-						} );
+					.then( onSuccess, onFail );
 			},
 			write: function() {
 				this.deferUntilTransition( "ready" );

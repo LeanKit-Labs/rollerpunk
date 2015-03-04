@@ -7,6 +7,7 @@ var archiver;
 var path = require( "path" );
 var logFolder = __dirname + "../../log-tests";
 var logName = "fileWriter.log";
+var errors = require( "../../src/errors.js" );
 function getFw( strategy, config ) {
 
 	var defaultConfig = {
@@ -34,7 +35,10 @@ function getFw( strategy, config ) {
 
 	var fwConfig = _.merge( defaultConfig, fwConfig );
 
-	return new FileWriter( fwConfig );
+	var fsm = new FileWriter( fwConfig );
+	patchFsmTransition( fsm );
+
+	return fsm;
 }
 
 describe( "FileWriter", function() {
@@ -526,8 +530,6 @@ describe( "FileWriter", function() {
 			before( function() {
 				writer = getFw();
 				delay = sinon.stub( _, "delay" );
-				transition = sinon.stub( writer, "transition" );
-
 				writer.reboots = 1;
 				writer.rebootInterval = 100;
 				writer.maxConsecutiveReboots = 5;
@@ -537,7 +539,7 @@ describe( "FileWriter", function() {
 
 			after( function() {
 				delay.restore();
-				transition.restore();
+				writer.transition.reset();
 			} );
 
 			it( "should increment the reboot counter", function() {
@@ -545,7 +547,7 @@ describe( "FileWriter", function() {
 			} );
 
 			it( "should transition to stopped", function() {
-				transition.should.be.calledWith( "stopped" );
+				writer.transition.should.be.calledWith( "stopped" );
 			} );
 
 			it( "should delay booting for the duration of the reboot interval", function() {
@@ -555,7 +557,7 @@ describe( "FileWriter", function() {
 			it( "should attempt to transition to booting", function() {
 				var cb = delay.getCall( 0 ).args[ 0 ];
 				cb();
-				transition.should.be.calledWith( "booting" );
+				writer.transition.should.be.calledWith( "booting" );
 			} );
 		} );
 
@@ -569,7 +571,6 @@ describe( "FileWriter", function() {
 				error = sinon.stub( console, "error" );
 				writer = getFw();
 				delay = sinon.stub( _, "delay" );
-				transition = sinon.stub( writer, "transition" );
 
 				writer.reboots = 10;
 				writer.rebootInterval = 100;
@@ -581,7 +582,7 @@ describe( "FileWriter", function() {
 			after( function() {
 				error.restore();
 				delay.restore();
-				transition.restore();
+				writer.transition.reset();
 			} );
 
 			it( "should increment the reboot counter", function() {
@@ -589,7 +590,7 @@ describe( "FileWriter", function() {
 			} );
 
 			it( "should transition to stopped", function() {
-				transition.should.be.calledWith( "stopped" );
+				writer.transition.should.be.calledWith( "stopped" );
 			} );
 
 			it( "should not delay booting", function() {
@@ -649,7 +650,7 @@ describe( "FileWriter", function() {
 
 			before( function() {
 				writer = getFw();
-				patchFsmTransition( writer );
+
 				verify = sinon.stub( writer, "_verifyDirectory" );
 			} );
 			describe( "when directory verification fails", function() {
@@ -673,6 +674,7 @@ describe( "FileWriter", function() {
 					log.restore();
 					verify.reset();
 					reboot.restore();
+					writer.transition.reset();
 				} );
 
 				it( "should try to reboot", function() {
@@ -686,6 +688,7 @@ describe( "FileWriter", function() {
 			} );
 			describe( "when directory verification succeeds", function() {
 				before( function( done ) {
+					writer.transition.reset();
 					verify.returns( when( true ) );
 					writer.states.booting._onEnter.call( writer )
 						.done( function() {
@@ -706,19 +709,17 @@ describe( "FileWriter", function() {
 		} );
 
 		describe( "when in acquiring state", function() {
-			var writer;
-			var openLog;
 
-			before( function() {
-				writer = getFw();
-				patchFsmTransition( writer );
-				openLog = sinon.stub( writer, "_openLog" );
-			} );
 			describe( "when opening log fails with unknown error", function() {
+				var writer;
+				var openLog;
 				var error;
 				var log;
 				var reboot;
 				before( function( done ) {
+					writer = getFw();
+
+					openLog = sinon.stub( writer, "_openLog" );
 					log = sinon.stub( console, "error" );
 					error = new Error( "REJECTED!" );
 					openLog.returns( when.reject( error ) );
@@ -735,6 +736,7 @@ describe( "FileWriter", function() {
 					log.restore();
 					openLog.reset();
 					reboot.restore();
+					writer.transition.reset();
 				} );
 
 				it( "should try to reboot", function() {
@@ -747,7 +749,12 @@ describe( "FileWriter", function() {
 				} );
 			} );
 			describe( "when opening log succeeds", function() {
+				var writer;
+				var openLog;
 				before( function( done ) {
+					writer = getFw();
+
+					openLog = sinon.stub( writer, "_openLog" );
 					openLog.returns( when( true ) );
 					writer.states.acquiring._onEnter.call( writer )
 						.done( function() {
@@ -767,9 +774,16 @@ describe( "FileWriter", function() {
 			} );
 
 			describe( "when opening log fails with invalid log exception", function() {
+				var myWriter;
+				var openLog;
+				var exception;
+
 				before( function( done ) {
-					openLog.returns( when.reject( new errors.InvalidLogException() ) );
-					writer.states.acquiring._onEnter.call( writer )
+					myWriter = getFw();
+					exception = new errors.InvalidLogException( "NOPE" );
+					openLog = sinon.stub( myWriter, "_openLog" );
+					openLog.returns( when.reject( exception ) );
+					myWriter.states.acquiring._onEnter.call( myWriter )
 						.done( function() {
 							done();
 						} );
@@ -777,7 +791,112 @@ describe( "FileWriter", function() {
 				} );
 
 				after( function() {
-					openLog.reset();
+					openLog.restore();
+					myWriter.transition.reset();
+				} );
+
+				it( "should transition to archiving", function() {
+					myWriter.transition.should.have.been.calledWith( "archiving" );
+				} );
+			} );
+		} );
+
+		describe( "when in archiving state", function() {
+			var writer;
+
+			before( function() {
+				writer = getFw();
+
+			} );
+
+			describe( "when pre-archiving has not happened", function() {
+				var prior;
+				before( function() {
+					writer.transition.reset();
+					prior = writer.priorState;
+					writer.priorState = "ready";
+					writer._transition( "archiving" );
+				} );
+
+				after( function() {
+					writer.priorState = prior;
+					writer.transition.reset();
+				} );
+
+				it( "should transition to pre-archiving", function() {
+					writer.transition.should.have.been.calledWith( "pre-archiving" );
+				} );
+
+			} );
+
+			describe( "when archiving fails", function() {
+				var archive;
+				var error = new Error( "Can't archive" );
+				var log;
+				var reboot;
+				before( function( done ) {
+					writer.transition.reset();
+					archive = sinon.stub( writer, "_archive" ).returns( when.reject( error ) );
+					reboot = sinon.stub( writer, "reboot" );
+					log = sinon.stub( console, "error" );
+					writer.priorState = "pre-archiving";
+					writer.states.archiving._onEnter.call( writer )
+						.done( function() {
+							done();
+						} );
+				} );
+
+				after( function() {
+					archive.restore();
+					reboot.restore();
+					log.restore();
+					writer.transition.reset();
+				} );
+
+				it( "should reboot", function() {
+					reboot.should.have.been.called;
+				} );
+
+				it( "should log the error", function() {
+					log.should.have.been.calledWith( error.toString() );
+				} );
+			} );
+
+			describe( "when archiving succeeds", function() {
+				var archive;
+				before( function( done ) {
+					writer.transition.reset();
+					archive = sinon.stub( writer, "_archive" ).returns( when( true ) );
+					writer.priorState = "pre-archiving";
+					writer.states.archiving._onEnter.call( writer )
+						.done( function() {
+							done();
+						} );
+				} );
+
+				after( function() {
+					archive.restore();
+					writer.transition.reset();
+				} );
+
+				it( "should transition to acquiring", function() {
+					writer.transition.should.have.been.calledWith( "acquiring" );
+				} );
+			} );
+
+		} );
+
+		describe( "when in pre-archiving state", function() {
+
+			describe( "when the log stream does not exist", function() {
+				var writer;
+				before( function() {
+					writer = getFw();
+
+					writer._transition( "pre-archiving" );
+				} );
+
+				after( function() {
 					writer.transition.reset();
 				} );
 
@@ -785,6 +904,155 @@ describe( "FileWriter", function() {
 					writer.transition.should.have.been.calledWith( "archiving" );
 				} );
 			} );
+
+			describe( "when the log stream does exist", function() {
+				var writer;
+				var stream;
+				var end;
+				before( function() {
+					writer = getFw();
+
+					stream = new FileStream();
+					end = sinon.spy( stream, "end" );
+					writer.logStream = stream;
+					writer.transition.reset();
+
+					writer._transition( "pre-archiving" );
+
+				} );
+
+				after( function() {
+					end.restore();
+					writer.transition.reset();
+				} );
+
+				it( "should wait for the stream to end", function() {
+					end.should.have.been.calledWith( "" );
+				} );
+
+				it( "should transition to archiving", function() {
+					writer.transition.should.have.been.calledWith( "archiving" );
+				} );
+			} );
+		} );
+
+		describe( "when in ready state", function() {
+
+			describe( "when entering ready", function() {
+				var writer;
+				var ready = false;
+				before( function( done ) {
+					writer = getFw();
+					writer.on( "ready", function() {
+						ready = true;
+					} );
+					writer.rebootCount = 15;
+					writer._transition( "ready" );
+
+					_.defer( function() {
+						done();
+					} );
+				} );
+
+				it( "should reset the reboot count", function() {
+					writer.rebootCount.should.equal( 0 );
+				} );
+
+				it( "should emit a ready event", function() {
+					ready.should.be.ok;
+				} );
+
+			} );
+
+			describe( "when writing", function() {
+
+				describe( "when message fits into current log file", function() {
+					var writer;
+					var msg;
+					var stream;
+					var verify;
+					before( function( done ) {
+						stream = new FileStream();
+						msg = "HERE I AM";
+						writer = getFw( {}, {
+							maxSize: 25
+						} );
+
+						verify = sinon.stub( writer, "_verifyLogFile" ).returns( true );
+
+						writer.logStream = stream;
+						writer.logFileSize = 10;
+
+						writer._transition( "ready" );
+						writer.write( msg );
+
+						stream.end( "", function() {
+							done();
+						} );
+					} );
+
+					it( "should write the message to the log stream", function() {
+						stream.data.should.equal( msg + "\n" );
+					} );
+
+					it( "should increase the log file size", function() {
+						writer.logFileSize.should.equal( 20 );
+					} );
+
+					it( "should not try to archive", function() {
+						writer.transition.should.not.have.been.calledWith( "archiving" );
+					} );
+
+					it( "should try to verify file with the current file size", function() {
+						verify.should.have.been.calledWith( {}, { size: 20 } );
+					} );
+
+				} );
+
+				describe( "when message fills up log file", function() {
+					var writer;
+					var msg;
+					var stream;
+					var verify;
+					before( function( done ) {
+						stream = new FileStream();
+						msg = "HERE I AM";
+						writer = getFw( {}, {
+							maxSize: 15
+						} );
+
+						verify = sinon.stub( writer, "_verifyLogFile" ).returns( false );
+
+						writer.logStream = stream;
+						writer.logFileSize = 10;
+
+						writer._transition( "ready" );
+						writer.write( msg );
+
+						stream.end( "", function() {
+							done();
+						} );
+					} );
+
+					it( "should write the message to the log stream", function() {
+						stream.data.should.equal( msg + "\n" );
+					} );
+
+					it( "should increase the log file size", function() {
+						writer.logFileSize.should.equal( 20 );
+					} );
+
+					it( "should try to archive", function() {
+						writer.transition.should.have.been.calledWith( "archiving" );
+					} );
+
+					it( "should try to verify file with the current file size", function() {
+						verify.should.have.been.calledWith( {}, { size: 20 } );
+					} );
+				} );
+
+			} );
+
 		} );
 
 	} );
