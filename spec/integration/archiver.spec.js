@@ -2,7 +2,7 @@ require( "../setup.js" );
 var path = require( "path" );
 var zlib = require( "zlib" );
 var fs = require( "../../src/filesystem.js" );
-var testDir = path.resolve( __dirname, "../logs" );
+var testDir = path.resolve( __dirname, "../../tmp/archiver" );
 var origFile = path.resolve( __dirname, "../../package.json" );
 var testFile = path.resolve( testDir, "package.json" );
 

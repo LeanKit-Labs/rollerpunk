@@ -18,7 +18,7 @@ var strategy = {
 
 	getArchivedFileName: function() { // Function for generating log filename
 
-		var stamp = moment().format( "YYYY-MM-DD_HH-MM-SSS" );
+		var stamp = moment().format( "YYYY-MM-DD_HH-mm-SSS" );
 
 		return baseName + "_" + stamp + extension;
 	}

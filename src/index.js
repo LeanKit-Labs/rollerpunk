@@ -1,4 +1,5 @@
 var _ = require( "lodash" );
+var moment = require( "moment" );
 var fileLogger = require( "./fileLogger.js" );
 var logger;
 var adapter;
@@ -23,7 +24,16 @@ function configure( config ) {
 		},
 
 		onLog: function( data ) {
-			logger.write( data );
+
+			var message = moment( data.timestamp ).format();
+
+			if ( data.namespace ) {
+				message += " " + data.namespace;
+			}
+
+			message += " [" + data.type + "]" + " " + data.msg;
+
+			logger.write( message );
 		}
 	};
 }
