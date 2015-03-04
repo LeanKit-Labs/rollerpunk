@@ -394,23 +394,22 @@ describe( "FileWriter", function() {
 			var writer;
 			var createStream;
 			var expectedError = new Error( "Can't open" );
-			var remove;
+			var reboot;
 			var p;
 
 			before( function() {
 				stream = new FileStream();
-				remove = sinon.spy( stream, "removeAllListeners" );
 				createStream = sinon.stub( fs, "createWriteStream" ).returns( stream );
 				writer = getFw();
-
+				reboot = sinon.stub( writer, "reboot" );
 				p = writer._openHandle();
 
 				stream.emit( "error", expectedError );
 			} );
 
 			after( function() {
+				reboot.restore();
 				createStream.restore();
-				remove.restore();
 				stream.end();
 			} );
 
@@ -418,11 +417,56 @@ describe( "FileWriter", function() {
 				p.should.eventually.be.rejectedWith( expectedError );
 			} );
 
-			it( "should remove all other event listeners", function( done ) {
-				p.catch( function() {
-					remove.should.have.been.called;
+			it( "should attempt to reboot", function() {
+				reboot.should.have.been.called;
+			} );
+
+		} );
+
+		describe( "when there is an error with the file after it has been opened", function() {
+			var stream;
+			var writer;
+			var createStream;
+			var expectedError = new Error( "Can't open" );
+			var reboot;
+			var p;
+			var log;
+
+			before( function( done ) {
+				log = sinon.stub( console, "error" );
+				stream = new FileStream();
+				createStream = sinon.stub( fs, "createWriteStream" ).returns( stream );
+				writer = getFw();
+				reboot = sinon.stub( writer, "reboot" );
+				p = writer._openHandle();
+
+				stream.emit( "open" );
+
+				_.delay( function() {
+					stream.emit( "error", expectedError );
 					done();
-				} );
+				}, 100 );
+
+			} );
+
+			after( function() {
+				log.restore();
+				reboot.restore();
+				createStream.restore();
+				stream.end();
+			} );
+
+			it( "should reject with the file error", function() {
+				p.should.eventually.be.resolved;
+			} );
+
+			it( "should attempt to reboot", function() {
+				reboot.should.have.been.called;
+			} );
+
+			it( "should log the error", function() {
+				log.should.have.been.calledWith( "File Stream Error" );
+				log.should.have.been.calledWith( expectedError.toString() );
 			} );
 		} );
 
@@ -430,12 +474,10 @@ describe( "FileWriter", function() {
 			var stream;
 			var writer;
 			var createStream;
-			var remove;
 			var p;
 
 			before( function() {
 				stream = new FileStream();
-				remove = sinon.spy( stream, "removeAllListeners" );
 				createStream = sinon.stub( fs, "createWriteStream" ).returns( stream );
 				writer = getFw();
 
@@ -446,7 +488,6 @@ describe( "FileWriter", function() {
 
 			after( function() {
 				createStream.restore();
-				remove.restore();
 				stream.end();
 			} );
 
@@ -454,12 +495,6 @@ describe( "FileWriter", function() {
 				p.should.eventually.be.resolved;
 			} );
 
-			it( "should remove all other event listeners", function( done ) {
-				p.then( function() {
-					remove.should.have.been.calledWith( "error" );
-					done();
-				} );
-			} );
 		} );
 
 	} );

@@ -34,27 +34,25 @@ var FileWriter = machina.Fsm.extend( {
 
 	_openHandle: function( _fileStats ) {
 		var self = this;
-		return when.promise( function( resolve, reject ) {
-			var fileStats = _fileStats || {}; // _fileStats will be null if the file did not previously exist
-			self.logFileSize = fileStats.size || 0;
+		var deferred = when.defer();
 
-			debug( "Opening log file. Current size: %s", self.logFileSize );
+		var fileStats = _fileStats || {}; // _fileStats will be null if the file did not previously exist
+		this.logFileSize = fileStats.size || 0;
 
-			self.logStream = fs.createWriteStream( self.logFilePath, {
-				flags: "a"
-			} );
+		debug( "Opening log file. Current size: %s", this.logFileSize );
 
-			self.logStream.on( "error", function( err ) {
-				self.logStream.removeAllListeners();
-				reject( err );
-			} );
-
-			self.logStream.once( "open", function() {
-				self.logStream.removeAllListeners( "error" );
-				resolve();
-			} );
-
+		this.logStream = fs.createWriteStream( this.logFilePath, {
+			flags: "a"
 		} );
+
+		this.logStream.on( "error", this._streamError.bind( this ) );
+
+		this.logStream.once( "open", this._streamOpen.bind( this ) );
+
+		this.deferred = deferred;
+
+		return this.deferred.promise;
+
 	},
 
 	_closeHandle: function() {
@@ -76,6 +74,24 @@ var FileWriter = machina.Fsm.extend( {
 			self.logStream.close();
 		} );
 
+	},
+
+	_streamError: function( err ) {
+		if ( this.deferred ) {
+			this.deferred.reject( err );
+			this.deferred = undefined;
+		} else {
+			console.error( "File Stream Error" );
+			console.error( err.toString() );
+		}
+		this.reboot();
+	},
+
+	_streamOpen: function() {
+		if ( this.deferred ) {
+			this.deferred.resolve();
+			this.deferred = undefined;
+		}
 	},
 
 	_verifyDirectory: function() {
