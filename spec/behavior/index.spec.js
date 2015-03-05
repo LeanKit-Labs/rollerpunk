@@ -32,8 +32,7 @@ describe( "Whistlepunk Adapter", function() {
 				fileLogger.should.have.been.calledWith( {
 					strategy: "size", // could be "time"
 					maxSize: 500, // in KB; how large the file is allowed to grow before a new log is created [size strategy]
-					maxAge: 5, // in days; how long the file is allowed to age before a new log is created [time strategy],
-					maxLogFiles: 5, // number of days a log is allowed to live before it is deleted (0 == no deleting)
+					maxLogFiles: 0, // number of days a log is allowed to live before it is deleted (0 == no deleting)
 					logFolder: "/var/log", // Path to folder where logs should be kept
 					fileName: "whistlepunk.log" // Base name to be used for naming log files
 				} );
@@ -63,8 +62,7 @@ describe( "Whistlepunk Adapter", function() {
 				fileLogger.should.have.been.calledWith( {
 					strategy: "size", // could be "time"
 					maxSize: 1000, // in KB; how large the file is allowed to grow before a new log is created [size strategy]
-					maxAge: 5, // in days; how long the file is allowed to age before a new log is created [time strategy],
-					maxLogFiles: 5, // number of days a log is allowed to live before it is deleted (0 == no deleting)
+					maxLogFiles: 0, // number of days a log is allowed to live before it is deleted (0 == no deleting)
 					logFolder: "/var/log", // Path to folder where logs should be kept
 					fileName: "whistlepunk.log" // Base name to be used for naming log files
 				} );

@@ -38,6 +38,10 @@ describe( "Whistlepunk Integration", function() {
 
 	} );
 
+	after( function() {
+		fs.remove( logFolder );
+	} );
+
 	it( "should log some stuff", function() {
 		true.should.be.ok;
 	} );

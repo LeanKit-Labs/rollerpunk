@@ -15,6 +15,10 @@ describe( "Archiver", function() {
 		fs.ensureDirSync( testDir );
 	} );
 
+	after( function() {
+		fs.remove( testDir );
+	} );
+
 	describe( "when compressing a file", function() {
 		var archivedFile;
 		var zippedFile;
