@@ -1,5 +1,5 @@
 {
-  "name": "whistlepunk-rollingfile",
+  "name": "rollerpunk",
   "version": "0.0.1",
   "description": "Rolling file adapter for whistlepunk",
   "main": "src/index.js",
