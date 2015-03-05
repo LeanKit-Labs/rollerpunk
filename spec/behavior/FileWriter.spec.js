@@ -14,7 +14,8 @@ function getFw( strategy, config ) {
 		initialState: "stopped",
 		strategy: {
 			verify: sinon.stub(),
-			getArchivedFileName: sinon.stub()
+			getArchivedFileName: sinon.stub(),
+			getRemoveableFiles: sinon.stub()
 		},
 		config: {
 			maxSize: 5,
@@ -33,7 +34,7 @@ function getFw( strategy, config ) {
 		toMerge.config = config;
 	}
 
-	var fwConfig = _.merge( defaultConfig, fwConfig );
+	var fwConfig = _.merge( defaultConfig, toMerge );
 
 	var fsm = new FileWriter( fwConfig );
 	patchFsmTransition( fsm );
@@ -535,6 +536,61 @@ describe( "FileWriter", function() {
 		} );
 	} );
 
+	describe( "when cleaning up log folder", function() {
+		describe( "when max log files configuration is set to 0", function() {
+			var writer;
+			var read;
+			before( function() {
+				writer = getFw( {}, { maxLogFiles: 0 } );
+				read = sinon.stub( fs, "readdir" );
+				writer._cleanupLogFolder();
+			} );
+
+			after( function() {
+				read.restore();
+			} );
+
+			it( "should not attempt to read the directory", function() {
+				read.should.not.have.been.called;
+			} );
+		} );
+		describe( "when max log file is set", function() {
+			var writer;
+			var read;
+			var dirList = [
+				"testing.log",
+				"testing_2015-03-04_22-15-642.log.gz",
+				"testing_2015-03-05_22-15-642.log.gz",
+				"testing_2015-03-06_22-15-642.log.gz"
+			];
+			var remove;
+			before( function() {
+				writer = getFw( {}, { maxLogFiles: 3 } );
+				writer.strategy.getRemoveableFiles.returns( when( dirList[ 3 ] ) );
+				remove = sinon.stub( writer, "_removeFiles" ).returns( when( true ) );
+				read = sinon.stub( fs, "readdir" ).returns( when( dirList ) );
+				writer._cleanupLogFolder();
+			} );
+
+			after( function() {
+				read.restore();
+			} );
+
+			it( "should give only the archived files to the strategy", function() {
+				var args = _.map( dirList.slice( 1 ), function( f ) {
+					return path.resolve( writer.logFolder, f );
+				} );
+
+				writer.strategy.getRemoveableFiles.should.have.been.calledWith( args );
+			} );
+
+			it( "should forward the correct files to remove", function() {
+				remove.should.have.been.calledWith( dirList[ 3 ] );
+			} );
+
+		} );
+	} );
+
 	describe( "when writing", function() {
 		var writer;
 		var handle;
@@ -899,9 +955,11 @@ describe( "FileWriter", function() {
 
 			describe( "when archiving succeeds", function() {
 				var archive;
+				var cleanup;
 				before( function( done ) {
 					writer.transition.reset();
 					archive = sinon.stub( writer, "_archive" ).returns( when( true ) );
+					cleanup = sinon.stub( writer, "_cleanupLogFolder" ).returns( when( true ) );
 					writer.priorState = "pre-archiving";
 					writer.states.archiving._onEnter.call( writer )
 						.done( function() {
@@ -910,12 +968,17 @@ describe( "FileWriter", function() {
 				} );
 
 				after( function() {
+					cleanup.restore();
 					archive.restore();
 					writer.transition.reset();
 				} );
 
 				it( "should transition to acquiring", function() {
 					writer.transition.should.have.been.calledWith( "acquiring" );
+				} );
+
+				it( "should call cleanup", function() {
+					cleanup.should.have.been.called;
 				} );
 			} );
 

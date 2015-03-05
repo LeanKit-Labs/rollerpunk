@@ -32,8 +32,41 @@ var FileWriter = machina.Fsm.extend( {
 
 	},
 
+	_cleanupLogFolder: function() {
+
+		if ( !this.config.maxLogFiles ) {
+			return when( true );
+		}
+
+		return fs.readdir( this.logFolder )
+			.then( function( files ) {
+				var fullpaths = _.map( files, function( f ) {
+					if ( path.extname( f ) !== ".gz" ) {
+						return null;
+					}
+					return path.resolve( this.logFolder, f );
+				}.bind( this ) );
+
+				fullpaths = _.compact( fullpaths );
+
+				return when( fullpaths );
+			}.bind( this ) )
+			.then( this.strategy.getRemoveableFiles )
+			.then( this._removeFiles.bind( this ) );
+	},
+
+	_removeFiles: function( fileList ) {
+		if ( !fileList || !fileList.length ) {
+			return when( true );
+		}
+
+		return when.all( _.map( fileList, function( file ) {
+			return fs.remove( file );
+		} ) );
+
+	},
+
 	_openHandle: function( _fileStats ) {
-		var self = this;
 		var deferred = when.defer();
 
 		var fileStats = _fileStats || {}; // _fileStats will be null if the file did not previously exist
@@ -225,6 +258,11 @@ var FileWriter = machina.Fsm.extend( {
 
 				var onSuccess = function() {
 					self.transition( "acquiring" );
+					self._cleanupLogFolder()
+						.then( null, function( err ) {
+							console.error( "Log folder could not be cleaned up" );
+							console.error( err.toString() );
+						} );
 				};
 
 				var onFail = function( err ) {
@@ -236,6 +274,7 @@ var FileWriter = machina.Fsm.extend( {
 					.then( self._archive.bind( self ) )
 					.then( onSuccess, onFail );
 			},
+
 			write: function() {
 				this.deferUntilTransition( "ready" );
 			}

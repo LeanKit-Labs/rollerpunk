@@ -2,7 +2,7 @@ var _ = require( "lodash" );
 var lift = require( "when/node" ).lift;
 var fsExtra = require( "fs-extra" );
 
-var methods = [ "ensureDir", "stat", "remove" ];
+var methods = [ "ensureDir", "stat", "remove", "readdir" ];
 
 
 var fs = _.reduce( fsExtra, function( memo, val, key ) {

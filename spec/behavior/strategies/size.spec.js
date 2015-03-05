@@ -65,4 +65,36 @@ describe( "Log Size Management Strategy", function() {
 
 	} );
 
+	describe( "when getting removeable files", function() {
+		var strategy;
+		var result;
+		var fileList;
+		before( function() {
+			fileList = [
+				"/tmp/wp-integration/wp-integration_2015-03-04_22-15-642.log.gz",
+				"/tmp/wp-integration/wp-integration_2015-02-04_22-15-642.log.gz",
+				"/tmp/wp-integration/wp-integration_2015-03-04_22-16-642.log.gz",
+				"/tmp/wp-integration/wp-integration_2015-03-04_22-15-641.log.gz",
+				"/tmp/wp-integration/wp-integration_2014-03-04_22-15-642.log.gz",
+				"/tmp/wp-integration/wp-integration_2015-03-04_23-15-642.log.gz"
+			];
+			var config = {
+				maxSize: 10, // KB
+				maxLogFiles: 3,
+				logFolder: "../../logs-test",
+				fileName: "size-test.log"
+			};
+			strategy = strategyFactory( config );
+			result = strategy.getRemoveableFiles( fileList );
+		} );
+
+		it( "should return 3 oldest files", function() {
+			result.should.eventually.eql( [
+				"/tmp/wp-integration/wp-integration_2014-03-04_22-15-642.log.gz",
+				"/tmp/wp-integration/wp-integration_2015-02-04_22-15-642.log.gz",
+				"/tmp/wp-integration/wp-integration_2015-03-04_22-15-641.log.gz"
+			] );
+		} );
+	} );
+
 } );
