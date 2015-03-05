@@ -15,7 +15,10 @@ var wp = require( "whistlepunk" )( postal, {
 			logFolder: "/var/log/myapp", // Folder where logs will live
 			fileName: "whistlepunk.log",
 			maxSize: 500, // Maximum file size in KB
-			maxLogFiles: 0 // Limit the number of archived files in your directory. 0 == unlimited
+			maxLogFiles: 0, // Limit the number of archived files in your directory. 0 == unlimited
+			maxUnwritten: 1000, // Maximum number of queued log writes when FileWriter is in an invalid state
+			maxConsecutiveReboots: 25, // Number of times the log will try to restart itself consecutively before giving up
+			rebootInterval: 60 // Number of seconds in between
 		}
 	}
 });

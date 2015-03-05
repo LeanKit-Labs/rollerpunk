@@ -34,7 +34,10 @@ describe( "Whistlepunk Adapter", function() {
 					maxSize: 500, // in KB; how large the file is allowed to grow before a new log is created [size strategy]
 					maxLogFiles: 0, // number of days a log is allowed to live before it is deleted (0 == no deleting)
 					logFolder: "/var/log", // Path to folder where logs should be kept
-					fileName: "whistlepunk.log" // Base name to be used for naming log files
+					fileName: "whistlepunk.log", // Base name to be used for naming log files
+					maxUnwritten: 1000, // Maximum number of queued log writes when FileWriter is in an invalid state
+					maxConsecutiveReboots: 25, // Number of times the log will try to restart itself consecutively before giving up
+					rebootInterval: 60 // Number of seconds in between
 				} );
 			} );
 		} );
@@ -64,7 +67,10 @@ describe( "Whistlepunk Adapter", function() {
 					maxSize: 1000, // in KB; how large the file is allowed to grow before a new log is created [size strategy]
 					maxLogFiles: 0, // number of days a log is allowed to live before it is deleted (0 == no deleting)
 					logFolder: "/var/log", // Path to folder where logs should be kept
-					fileName: "whistlepunk.log" // Base name to be used for naming log files
+					fileName: "whistlepunk.log", // Base name to be used for naming log files
+					maxUnwritten: 1000, // Maximum number of queued log writes when FileWriter is in an invalid state
+					maxConsecutiveReboots: 25, // Number of times the log will try to restart itself consecutively before giving up
+					rebootInterval: 60 // Number of seconds in between
 				} );
 			} );
 		} );

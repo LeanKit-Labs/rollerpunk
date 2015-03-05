@@ -20,7 +20,7 @@ var FileWriter = machina.Fsm.extend( {
 		this.logFilePath = path.resolve( this.logFolder, this.config.fileName );
 
 		this.rebootCount = 0;
-		this.rebootInterval = this.config.rebootInterval || 60000;
+		this.rebootInterval = ( this.config.rebootInterval || 60 ) * 1000;
 		this.maxConsecutiveReboots = this.config.maxConsecutiveReboots || 20;
 
 		this.maxUnwritten = this.config.maxUnwritten || 1000;
