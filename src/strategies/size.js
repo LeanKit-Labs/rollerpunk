@@ -1,5 +1,6 @@
 var debug = require( "debug" )( "wp:strategy:size" );
 var moment = require( "moment" );
+var when = require( "when" );
 var _ = require( "lodash" );
 var path = require( "path" );
 var config;
@@ -8,8 +9,7 @@ var extension;
 var baseName;
 var stampFormat = "YYYY-MM-DD_HH-mm-SSS";
 var stampMatcher = /(\d{4}\-\d{2}\-\d{2}_\d{2}\-\d{2}\-\d{3})/;
-var stampLength = stampFormat.length;
-var stampSlice = -1 * stampLength;
+
 
 function parsePath( filePath ) {
 	var ext = path.extname( filePath );
