@@ -19,9 +19,11 @@ var FileWriter = machina.Fsm.extend( {
 		this.logFolder = this.config.logFolder;
 		this.logFilePath = path.resolve( this.logFolder, this.config.fileName );
 
-		this.rebootInterval = 60000;
 		this.rebootCount = 0;
-		this.maxConsecutiveReboots = 20;
+		this.rebootInterval = this.config.rebootInterval || 60000;
+		this.maxConsecutiveReboots = this.config.maxConsecutiveReboots || 20;
+
+		this.maxUnwritten = this.config.maxUnwritten || 1000;
 
 		this.logStream = null;
 		this.logFileSize = 0;
@@ -52,7 +54,11 @@ var FileWriter = machina.Fsm.extend( {
 				return when( fullpaths );
 			}.bind( this ) )
 			.then( this.strategy.getRemoveableFiles )
-			.then( this._removeFiles.bind( this ) );
+			.then( this._removeFiles.bind( this ) )
+			.then( null, function( err ) {
+				console.error( "Log folder could not be cleaned up" );
+				console.error( err.toString() );
+			} );
 	},
 
 	_removeFiles: function( fileList ) {
@@ -204,6 +210,7 @@ var FileWriter = machina.Fsm.extend( {
 				this.emit( "boot" );
 				var self = this;
 				var onSuccess = function() {
+					self._cleanupLogFolder();
 					self.transition( "acquiring" );
 				};
 				var onError = function( err ) {
@@ -216,6 +223,7 @@ var FileWriter = machina.Fsm.extend( {
 				return this._verifyDirectory().then( onSuccess, onError );
 
 			},
+
 			write: function() {
 				this.deferUntilTransition( "ready" );
 			}
@@ -258,11 +266,7 @@ var FileWriter = machina.Fsm.extend( {
 
 				var onSuccess = function() {
 					self.transition( "acquiring" );
-					self._cleanupLogFolder()
-						.then( null, function( err ) {
-							console.error( "Log folder could not be cleaned up" );
-							console.error( err.toString() );
-						} );
+					self._cleanupLogFolder();
 				};
 
 				var onFail = function( err ) {
@@ -333,13 +337,15 @@ var FileWriter = machina.Fsm.extend( {
 			_onEnter: function() {
 				this.emit( "stop" );
 				this._closeHandle();
-				this.clearQueue();
 			},
+
 			write: function() {
-				// We're going to let writes slide while we're stopped
-				// We don't want thousands of writes queueing up if we're waiting to reboot
+				if ( this.inputQueue.length >= this.maxUnwritten ) {
+					this.inputQueue.shift();
+				}
+				this.deferUntilTransition( "ready" );
 			}
-		}
+		},
 	},
 
 	write: function( msg ) {

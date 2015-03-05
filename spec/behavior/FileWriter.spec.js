@@ -537,6 +537,33 @@ describe( "FileWriter", function() {
 	} );
 
 	describe( "when cleaning up log folder", function() {
+
+		describe( "when cleanup fails", function() {
+			var writer;
+			var read;
+			var expectedError = new Error( "READ FAILED" );
+			var log;
+			before( function( done ) {
+				writer = getFw( {}, { maxLogFiles: 5 } );
+				log = sinon.stub( console, "error" );
+				read = sinon.stub( fs, "readdir" ).returns( when.reject( expectedError ) );
+				writer._cleanupLogFolder()
+					.done( function() {
+						done();
+					} );
+			} );
+
+			after( function() {
+				log.restore();
+				read.restore();
+			} );
+
+			it( "should log the error", function() {
+				log.should.have.been.calledWith( "Log folder could not be cleaned up" );
+				log.should.have.been.calledWith( expectedError.toString() );
+			} );
+		} );
+
 		describe( "when max log files configuration is set to 0", function() {
 			var writer;
 			var read;
@@ -707,10 +734,9 @@ describe( "FileWriter", function() {
 				writer = getFw();
 				defer = sinon.stub( writer, "deferUntilTransition" );
 				writes = _.reduce( writer.states, function( memo, state, key ) {
-					if ( key === "ready" || key === "stopped" ) {
+					if ( key === "ready" ) {
 						return memo;
 					}
-
 					memo.push( state.write.bind( writer ) );
 
 					return memo;
@@ -726,11 +752,11 @@ describe( "FileWriter", function() {
 				defer.restore();
 			} );
 
-			it( "should have 4 states", function() {
-				writes.length.should.equal( 4 );
+			it( "should have 5 states", function() {
+				writes.length.should.equal( 5 );
 			} );
 			it( "should defer all writes until ready", function() {
-				defer.should.have.callCount( 4 );
+				defer.should.have.callCount( 5 );
 				defer.should.always.have.been.calledWith( "ready" );
 			} );
 		} );
@@ -778,7 +804,9 @@ describe( "FileWriter", function() {
 				} );
 			} );
 			describe( "when directory verification succeeds", function() {
+				var cleanup;
 				before( function( done ) {
+					cleanup = sinon.stub( writer, "_cleanupLogFolder" ).returns( when( true ) );
 					writer.transition.reset();
 					verify.returns( when( true ) );
 					writer.states.booting._onEnter.call( writer )
@@ -789,12 +817,17 @@ describe( "FileWriter", function() {
 				} );
 
 				after( function() {
+					cleanup.restore();
 					verify.reset();
 					writer.transition.reset();
 				} );
 
 				it( "should transition to acquiring", function() {
 					writer.transition.should.have.been.calledWith( "acquiring" );
+				} );
+
+				it( "should try to cleanup the log folder", function() {
+					cleanup.should.have.been.called;
 				} );
 			} );
 		} );
@@ -1035,22 +1068,53 @@ describe( "FileWriter", function() {
 		} );
 
 		describe( "when in stopped state", function() {
-			var writer;
-			var clear;
-			var close;
-			before( function() {
-				writer = getFw();
-				close = sinon.stub( writer, "_closeHandle" );
-				clear = sinon.spy( writer, "clearQueue" );
-				writer.states.stopped._onEnter.call( writer );
+			describe( "when entering", function() {
+				var writer;
+				var close;
+				before( function() {
+					writer = getFw();
+					close = sinon.stub( writer, "_closeHandle" );
+					writer.states.stopped._onEnter.call( writer );
+				} );
+
+				it( "should close the file handle", function() {
+					close.should.have.been.called;
+				} );
+
 			} );
 
-			it( "should clear the input queue", function() {
-				clear.should.have.been.called;
-			} );
+			describe( "when writing", function() {
+				describe( "when there are too many writes queued up", function() {
+					var writer;
+					var queue;
+					var process = function( m ) {
+						return {
+							type: "transition",
+							untilState: "ready",
+							args: [ {}, m ]
+						};
+					};
+					before( function() {
+						writer = getFw();
 
-			it( "should close the file handle", function() {
-				close.should.have.been.called;
+						queue = [ "m1", "m2", "m3", "m4", "m5" ];
+
+						writer._transition( "stopped" );
+						writer.maxUnwritten = 5;
+						writer.inputQueue = queue.map( process );
+
+						writer.write( "m6" );
+					} );
+
+					it( "should get rid of the oldest message in the queue", function() {
+						var messages = _.map( writer.inputQueue, function( q ) {
+							return q.args[ 1 ];
+						} );
+
+						messages.should.eql( [ "m2", "m3", "m4", "m5", "m6" ] );
+					} );
+
+				} );
 			} );
 
 		} );
