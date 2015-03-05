@@ -333,9 +333,11 @@ var FileWriter = machina.Fsm.extend( {
 			_onEnter: function() {
 				this.emit( "stop" );
 				this._closeHandle();
+				this.clearQueue();
 			},
 			write: function() {
-				this.deferUntilTransition( "ready" );
+				// We're going to let writes slide while we're stopped
+				// We don't want thousands of writes queueing up if we're waiting to reboot
 			}
 		}
 	},

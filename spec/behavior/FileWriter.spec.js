@@ -707,7 +707,7 @@ describe( "FileWriter", function() {
 				writer = getFw();
 				defer = sinon.stub( writer, "deferUntilTransition" );
 				writes = _.reduce( writer.states, function( memo, state, key ) {
-					if ( key === "ready" || !_.isFunction( state.write ) ) {
+					if ( key === "ready" || key === "stopped" ) {
 						return memo;
 					}
 
@@ -726,11 +726,11 @@ describe( "FileWriter", function() {
 				defer.restore();
 			} );
 
-			it( "should have 5 states", function() {
-				writes.length.should.equal( 5 );
+			it( "should have 4 states", function() {
+				writes.length.should.equal( 4 );
 			} );
 			it( "should defer all writes until ready", function() {
-				defer.should.have.callCount( 5 );
+				defer.should.have.callCount( 4 );
 				defer.should.always.have.been.calledWith( "ready" );
 			} );
 		} );
@@ -1032,6 +1032,27 @@ describe( "FileWriter", function() {
 					writer.transition.should.have.been.calledWith( "archiving" );
 				} );
 			} );
+		} );
+
+		describe( "when in stopped state", function() {
+			var writer;
+			var clear;
+			var close;
+			before( function() {
+				writer = getFw();
+				close = sinon.stub( writer, "_closeHandle" );
+				clear = sinon.spy( writer, "clearQueue" );
+				writer.states.stopped._onEnter.call( writer );
+			} );
+
+			it( "should clear the input queue", function() {
+				clear.should.have.been.called;
+			} );
+
+			it( "should close the file handle", function() {
+				close.should.have.been.called;
+			} );
+
 		} );
 
 		describe( "when in ready state", function() {
