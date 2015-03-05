@@ -10,7 +10,7 @@ module.exports = function( config ) {
 	var strategyFactory = strategies[ strategyName ];
 
 	if ( !strategyFactory ) {
-		throw new Error( "Invalid Whistlepunk File Logger Strategy" );
+		throw new Error( "Invalid Whistlepunk File Logger Strategy: " + strategyName );
 	}
 
 	var strategy = strategyFactory( config );

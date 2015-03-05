@@ -14,7 +14,8 @@ function getFw( strategy, config ) {
 		initialState: "stopped",
 		strategy: {
 			verify: sinon.stub(),
-			getArchivedFileName: sinon.stub()
+			getArchivedFileName: sinon.stub(),
+			getRemoveableFiles: sinon.stub()
 		},
 		config: {
 			maxSize: 5,
@@ -33,7 +34,7 @@ function getFw( strategy, config ) {
 		toMerge.config = config;
 	}
 
-	var fwConfig = _.merge( defaultConfig, fwConfig );
+	var fwConfig = _.merge( defaultConfig, toMerge );
 
 	var fsm = new FileWriter( fwConfig );
 	patchFsmTransition( fsm );
@@ -394,23 +395,22 @@ describe( "FileWriter", function() {
 			var writer;
 			var createStream;
 			var expectedError = new Error( "Can't open" );
-			var remove;
+			var reboot;
 			var p;
 
 			before( function() {
 				stream = new FileStream();
-				remove = sinon.spy( stream, "removeAllListeners" );
 				createStream = sinon.stub( fs, "createWriteStream" ).returns( stream );
 				writer = getFw();
-
+				reboot = sinon.stub( writer, "reboot" );
 				p = writer._openHandle();
 
 				stream.emit( "error", expectedError );
 			} );
 
 			after( function() {
+				reboot.restore();
 				createStream.restore();
-				remove.restore();
 				stream.end();
 			} );
 
@@ -418,11 +418,56 @@ describe( "FileWriter", function() {
 				p.should.eventually.be.rejectedWith( expectedError );
 			} );
 
-			it( "should remove all other event listeners", function( done ) {
-				p.catch( function() {
-					remove.should.have.been.called;
+			it( "should attempt to reboot", function() {
+				reboot.should.have.been.called;
+			} );
+
+		} );
+
+		describe( "when there is an error with the file after it has been opened", function() {
+			var stream;
+			var writer;
+			var createStream;
+			var expectedError = new Error( "Can't open" );
+			var reboot;
+			var p;
+			var log;
+
+			before( function( done ) {
+				log = sinon.stub( console, "error" );
+				stream = new FileStream();
+				createStream = sinon.stub( fs, "createWriteStream" ).returns( stream );
+				writer = getFw();
+				reboot = sinon.stub( writer, "reboot" );
+				p = writer._openHandle();
+
+				stream.emit( "open" );
+
+				_.delay( function() {
+					stream.emit( "error", expectedError );
 					done();
-				} );
+				}, 100 );
+
+			} );
+
+			after( function() {
+				log.restore();
+				reboot.restore();
+				createStream.restore();
+				stream.end();
+			} );
+
+			it( "should reject with the file error", function() {
+				p.should.eventually.be.resolved;
+			} );
+
+			it( "should attempt to reboot", function() {
+				reboot.should.have.been.called;
+			} );
+
+			it( "should log the error", function() {
+				log.should.have.been.calledWith( "File Stream Error" );
+				log.should.have.been.calledWith( expectedError.toString() );
 			} );
 		} );
 
@@ -430,12 +475,10 @@ describe( "FileWriter", function() {
 			var stream;
 			var writer;
 			var createStream;
-			var remove;
 			var p;
 
 			before( function() {
 				stream = new FileStream();
-				remove = sinon.spy( stream, "removeAllListeners" );
 				createStream = sinon.stub( fs, "createWriteStream" ).returns( stream );
 				writer = getFw();
 
@@ -446,7 +489,6 @@ describe( "FileWriter", function() {
 
 			after( function() {
 				createStream.restore();
-				remove.restore();
 				stream.end();
 			} );
 
@@ -454,12 +496,6 @@ describe( "FileWriter", function() {
 				p.should.eventually.be.resolved;
 			} );
 
-			it( "should remove all other event listeners", function( done ) {
-				p.then( function() {
-					remove.should.have.been.calledWith( "error" );
-					done();
-				} );
-			} );
 		} );
 
 	} );
@@ -497,6 +533,88 @@ describe( "FileWriter", function() {
 				should.not.exist( writer.logFileStream );
 				done();
 			} );
+		} );
+	} );
+
+	describe( "when cleaning up log folder", function() {
+
+		describe( "when cleanup fails", function() {
+			var writer;
+			var read;
+			var expectedError = new Error( "READ FAILED" );
+			var log;
+			before( function( done ) {
+				writer = getFw( {}, { maxLogFiles: 5 } );
+				log = sinon.stub( console, "error" );
+				read = sinon.stub( fs, "readdir" ).returns( when.reject( expectedError ) );
+				writer._cleanupLogFolder()
+					.done( function() {
+						done();
+					} );
+			} );
+
+			after( function() {
+				log.restore();
+				read.restore();
+			} );
+
+			it( "should log the error", function() {
+				log.should.have.been.calledWith( "Log folder could not be cleaned up" );
+				log.should.have.been.calledWith( expectedError.toString() );
+			} );
+		} );
+
+		describe( "when max log files configuration is set to 0", function() {
+			var writer;
+			var read;
+			before( function() {
+				writer = getFw( {}, { maxLogFiles: 0 } );
+				read = sinon.stub( fs, "readdir" );
+				writer._cleanupLogFolder();
+			} );
+
+			after( function() {
+				read.restore();
+			} );
+
+			it( "should not attempt to read the directory", function() {
+				read.should.not.have.been.called;
+			} );
+		} );
+		describe( "when max log file is set", function() {
+			var writer;
+			var read;
+			var dirList = [
+				"testing.log",
+				"testing_2015-03-04_22-15-642.log.gz",
+				"testing_2015-03-05_22-15-642.log.gz",
+				"testing_2015-03-06_22-15-642.log.gz"
+			];
+			var remove;
+			before( function() {
+				writer = getFw( {}, { maxLogFiles: 3 } );
+				writer.strategy.getRemoveableFiles.returns( when( dirList[ 3 ] ) );
+				remove = sinon.stub( writer, "_removeFiles" ).returns( when( true ) );
+				read = sinon.stub( fs, "readdir" ).returns( when( dirList ) );
+				writer._cleanupLogFolder();
+			} );
+
+			after( function() {
+				read.restore();
+			} );
+
+			it( "should give only the archived files to the strategy", function() {
+				var args = _.map( dirList.slice( 1 ), function( f ) {
+					return path.resolve( writer.logFolder, f );
+				} );
+
+				writer.strategy.getRemoveableFiles.should.have.been.calledWith( args );
+			} );
+
+			it( "should forward the correct files to remove", function() {
+				remove.should.have.been.calledWith( dirList[ 3 ] );
+			} );
+
 		} );
 	} );
 
@@ -616,10 +734,9 @@ describe( "FileWriter", function() {
 				writer = getFw();
 				defer = sinon.stub( writer, "deferUntilTransition" );
 				writes = _.reduce( writer.states, function( memo, state, key ) {
-					if ( key === "ready" || !_.isFunction( state.write ) ) {
+					if ( key === "ready" ) {
 						return memo;
 					}
-
 					memo.push( state.write.bind( writer ) );
 
 					return memo;
@@ -687,7 +804,9 @@ describe( "FileWriter", function() {
 				} );
 			} );
 			describe( "when directory verification succeeds", function() {
+				var cleanup;
 				before( function( done ) {
+					cleanup = sinon.stub( writer, "_cleanupLogFolder" ).returns( when( true ) );
 					writer.transition.reset();
 					verify.returns( when( true ) );
 					writer.states.booting._onEnter.call( writer )
@@ -698,12 +817,17 @@ describe( "FileWriter", function() {
 				} );
 
 				after( function() {
+					cleanup.restore();
 					verify.reset();
 					writer.transition.reset();
 				} );
 
 				it( "should transition to acquiring", function() {
 					writer.transition.should.have.been.calledWith( "acquiring" );
+				} );
+
+				it( "should try to cleanup the log folder", function() {
+					cleanup.should.have.been.called;
 				} );
 			} );
 		} );
@@ -864,9 +988,11 @@ describe( "FileWriter", function() {
 
 			describe( "when archiving succeeds", function() {
 				var archive;
+				var cleanup;
 				before( function( done ) {
 					writer.transition.reset();
 					archive = sinon.stub( writer, "_archive" ).returns( when( true ) );
+					cleanup = sinon.stub( writer, "_cleanupLogFolder" ).returns( when( true ) );
 					writer.priorState = "pre-archiving";
 					writer.states.archiving._onEnter.call( writer )
 						.done( function() {
@@ -875,12 +1001,17 @@ describe( "FileWriter", function() {
 				} );
 
 				after( function() {
+					cleanup.restore();
 					archive.restore();
 					writer.transition.reset();
 				} );
 
 				it( "should transition to acquiring", function() {
 					writer.transition.should.have.been.calledWith( "acquiring" );
+				} );
+
+				it( "should call cleanup", function() {
+					cleanup.should.have.been.called;
 				} );
 			} );
 
@@ -934,6 +1065,58 @@ describe( "FileWriter", function() {
 					writer.transition.should.have.been.calledWith( "archiving" );
 				} );
 			} );
+		} );
+
+		describe( "when in stopped state", function() {
+			describe( "when entering", function() {
+				var writer;
+				var close;
+				before( function() {
+					writer = getFw();
+					close = sinon.stub( writer, "_closeHandle" );
+					writer.states.stopped._onEnter.call( writer );
+				} );
+
+				it( "should close the file handle", function() {
+					close.should.have.been.called;
+				} );
+
+			} );
+
+			describe( "when writing", function() {
+				describe( "when there are too many writes queued up", function() {
+					var writer;
+					var queue;
+					var process = function( m ) {
+						return {
+							type: "transition",
+							untilState: "ready",
+							args: [ {}, m ]
+						};
+					};
+					before( function() {
+						writer = getFw();
+
+						queue = [ "m1", "m2", "m3", "m4", "m5" ];
+
+						writer._transition( "stopped" );
+						writer.maxUnwritten = 5;
+						writer.inputQueue = queue.map( process );
+
+						writer.write( "m6" );
+					} );
+
+					it( "should get rid of the oldest message in the queue", function() {
+						var messages = _.map( writer.inputQueue, function( q ) {
+							return q.args[ 1 ];
+						} );
+
+						messages.should.eql( [ "m2", "m3", "m4", "m5", "m6" ] );
+					} );
+
+				} );
+			} );
+
 		} );
 
 		describe( "when in ready state", function() {

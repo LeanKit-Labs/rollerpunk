@@ -19,9 +19,11 @@ var FileWriter = machina.Fsm.extend( {
 		this.logFolder = this.config.logFolder;
 		this.logFilePath = path.resolve( this.logFolder, this.config.fileName );
 
-		this.rebootInterval = 60000;
 		this.rebootCount = 0;
-		this.maxConsecutiveReboots = 20;
+		this.rebootInterval = ( this.config.rebootInterval || 60 ) * 1000;
+		this.maxConsecutiveReboots = this.config.maxConsecutiveReboots || 20;
+
+		this.maxUnwritten = this.config.maxUnwritten || 1000;
 
 		this.logStream = null;
 		this.logFileSize = 0;
@@ -32,29 +34,64 @@ var FileWriter = machina.Fsm.extend( {
 
 	},
 
+	_cleanupLogFolder: function() {
+
+		if ( !this.config.maxLogFiles ) {
+			return when( true );
+		}
+
+		return fs.readdir( this.logFolder )
+			.then( function( files ) {
+				var fullpaths = _.map( files, function( f ) {
+					if ( path.extname( f ) !== ".gz" ) {
+						return null;
+					}
+					return path.resolve( this.logFolder, f );
+				}.bind( this ) );
+
+				fullpaths = _.compact( fullpaths );
+
+				return when( fullpaths );
+			}.bind( this ) )
+			.then( this.strategy.getRemoveableFiles )
+			.then( this._removeFiles.bind( this ) )
+			.then( null, function( err ) {
+				console.error( "Log folder could not be cleaned up" );
+				console.error( err.toString() );
+			} );
+	},
+
+	_removeFiles: function( fileList ) {
+		if ( !fileList || !fileList.length ) {
+			return when( true );
+		}
+
+		return when.all( _.map( fileList, function( file ) {
+			return fs.remove( file );
+		} ) );
+
+	},
+
 	_openHandle: function( _fileStats ) {
-		var self = this;
-		return when.promise( function( resolve, reject ) {
-			var fileStats = _fileStats || {}; // _fileStats will be null if the file did not previously exist
-			self.logFileSize = fileStats.size || 0;
+		var deferred = when.defer();
 
-			debug( "Opening log file. Current size: %s", self.logFileSize );
+		var fileStats = _fileStats || {}; // _fileStats will be null if the file did not previously exist
+		this.logFileSize = fileStats.size || 0;
 
-			self.logStream = fs.createWriteStream( self.logFilePath, {
-				flags: "a"
-			} );
+		debug( "Opening log file. Current size: %s", this.logFileSize );
 
-			self.logStream.on( "error", function( err ) {
-				self.logStream.removeAllListeners();
-				reject( err );
-			} );
-
-			self.logStream.once( "open", function() {
-				self.logStream.removeAllListeners( "error" );
-				resolve();
-			} );
-
+		this.logStream = fs.createWriteStream( this.logFilePath, {
+			flags: "a"
 		} );
+
+		this.logStream.on( "error", this._streamError.bind( this ) );
+
+		this.logStream.once( "open", this._streamOpen.bind( this ) );
+
+		this.deferred = deferred;
+
+		return this.deferred.promise;
+
 	},
 
 	_closeHandle: function() {
@@ -76,6 +113,24 @@ var FileWriter = machina.Fsm.extend( {
 			self.logStream.close();
 		} );
 
+	},
+
+	_streamError: function( err ) {
+		if ( this.deferred ) {
+			this.deferred.reject( err );
+			this.deferred = undefined;
+		} else {
+			console.error( "File Stream Error" );
+			console.error( err.toString() );
+		}
+		this.reboot();
+	},
+
+	_streamOpen: function() {
+		if ( this.deferred ) {
+			this.deferred.resolve();
+			this.deferred = undefined;
+		}
 	},
 
 	_verifyDirectory: function() {
@@ -155,6 +210,7 @@ var FileWriter = machina.Fsm.extend( {
 				this.emit( "boot" );
 				var self = this;
 				var onSuccess = function() {
+					self._cleanupLogFolder();
 					self.transition( "acquiring" );
 				};
 				var onError = function( err ) {
@@ -167,6 +223,7 @@ var FileWriter = machina.Fsm.extend( {
 				return this._verifyDirectory().then( onSuccess, onError );
 
 			},
+
 			write: function() {
 				this.deferUntilTransition( "ready" );
 			}
@@ -209,6 +266,7 @@ var FileWriter = machina.Fsm.extend( {
 
 				var onSuccess = function() {
 					self.transition( "acquiring" );
+					self._cleanupLogFolder();
 				};
 
 				var onFail = function( err ) {
@@ -220,6 +278,7 @@ var FileWriter = machina.Fsm.extend( {
 					.then( self._archive.bind( self ) )
 					.then( onSuccess, onFail );
 			},
+
 			write: function() {
 				this.deferUntilTransition( "ready" );
 			}
@@ -279,10 +338,14 @@ var FileWriter = machina.Fsm.extend( {
 				this.emit( "stop" );
 				this._closeHandle();
 			},
+
 			write: function() {
+				if ( this.inputQueue.length >= this.maxUnwritten ) {
+					this.inputQueue.shift();
+				}
 				this.deferUntilTransition( "ready" );
 			}
-		}
+		},
 	},
 
 	write: function( msg ) {
